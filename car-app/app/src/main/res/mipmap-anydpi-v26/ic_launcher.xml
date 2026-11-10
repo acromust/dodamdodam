@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 가이드(app-icon): 전경과 배경을 나눈 Android 적응형 아이콘. 배경 = 파란 하늘과 도로, 전경 = 음성 말풍선(가운데 66dp 안전 영역 안) -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg" />
+    <foreground android:drawable="@drawable/ic_launcher_fg" />
+</adaptive-icon>

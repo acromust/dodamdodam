@@ -1,0 +1,13 @@
+server/data/
+**/__pycache__/
+car-app/**/build/
+car-app/.gradle/
+car-app/local.properties
+.env
+*.apk
+.DS_Store
+
+# 심사용 release APK는 올린다
+!apk/*.apk
+car-app/.kotlin/
+car-app/tools/**/style_refs/
