@@ -44,9 +44,8 @@ class CarService : Service() {
         val ARRIVE_MIN_DRIVE_MS get() = if (SHORT) 15_000L else 180_000L // 주차로 볼 최소 주행
         const val STEER_CALM_DEG = 30f         // 직진으로 볼 조향각
         const val STEER_CALM_MS = 3_000L       // 직진 유지
-        val GAP_MS get() = if (SHORT) 20_000L else 60_000L // 메시지 사이 최소 간격
         const val PREROLL_MS = 150L            // 음성 앞 묵음
-        // 주행 중 하루 5개 상한은 11/09 사용자 결정으로 뺐다. 주의 분산은 메시지 사이 간격(GAP_MS)과 메시지 길이 5초 제한(서버 max_sec)으로 막는다
+        // 주행 중 하루 5개 상한은 11/09 사용자 결정으로 뺐다. 메시지 사이 1분 간격도 11/11 사용자 결정으로 뺐다(설명이 안 됨). 주의 분산은 메시지 길이 5초 제한(서버 max_sec)과 바쁜 순간 기다리기(roadReason)·핸들 버튼 선택으로 막는다
         const val STEER_WAIT_MS = 3_000L       // 핸들 각도 신호를 이만큼 못 받으면 주행 중에는 틀지 않고 주차해서(11/09 결정)
         const val MIN_SPEED_KPH = 15f          // 이 속도를 한 번 넘기면 주차장을 벗어난 것으로 본다
         const val LISTEN_WINDOW_MS = 8_000L    // 버튼 듣기: 안내가 끝난 뒤 기다리는 시간
@@ -98,7 +97,6 @@ class CarService : Service() {
     private val placeAlerts = mutableMapOf<String, String>() // 메시지 id → 반경 알림 id
     private val deferredThisTrip = mutableSetOf<String>() // 버튼 듣기에서 대답 없어 도착으로 넘긴 것(이번 주행엔 다시 안 물음)
     private var asking: Hidden? = null                     // 버튼 듣기로 대답을 기다리는 메시지
-    private val seated = mutableMapOf<String, Boolean>()    // 조수석·뒷좌석 착석(동승자)
     private val onEmulator = android.os.Build.HARDWARE == "ranchu" || android.os.Build.HARDWARE == "goldfish"
     private var annDone: (() -> Unit)? = null   // 녹음 안내가 끝나면 할 일
     private var screenOff: android.content.BroadcastReceiver? = null
@@ -663,21 +661,6 @@ class CarService : Service() {
         }.onFailure { Hub.log("조향 구독 불가: $it") }
         readSteer()
         subscribeSpeed()
-        // 동승자: 조수석·뒷좌석 착석. 프라이빗 모드면 안내에서 보낸 사람을 말하지 않는다.
-        listOf(ai.pleos.playground.vehicle.constant.area.SeatValue.ROW_1_RIGHT, ai.pleos.playground.vehicle.constant.area.SeatValue.ROW_2_LEFT,
-            ai.pleos.playground.vehicle.constant.area.SeatValue.ROW_2_RIGHT).forEach { sv ->
-            runCatching {
-                v.getSeat().registerSeatOccupancy(ai.pleos.playground.vehicle.api.model.area.SeatArea(sv), object : ai.pleos.playground.vehicle.listener.SeatOccupancyListener {
-                    override fun onSeatOccupancyUpdated(value: Boolean?) { main.post {
-                        // Pleos 에뮬레이터는 착석 값이 뒤집혀 온다(콘솔 '탑승' → false, 실측 10/26·10/29). 에뮬레이터에서만 바로잡는다.
-                        val occupied = if (onEmulator) value == false else value == true
-                        val was = withPassenger(); seated[sv.name] = occupied
-                        if (was != withPassenger()) Hub.log(if (!withPassenger()) "혼자 탐" else if (Hub.privateMode(this@CarService)) "동승자 있음 → 프라이빗 모드라 보낸 사람 이름은 말하지 않음" else "동승자 있음(프라이빗 모드 꺼짐)")
-                    } }
-                    override fun onFailed(e: Exception) { main.post { Hub.log("착석 $sv 구독 실패: $e") } }
-                })
-            }.onFailure { Hub.log("착석 $sv 구독 불가: $it") }
-        }
         // 방향지시등: 차로를 바꾸는 동안에는 들려주지 않는다
         runCatching {
             v.getTurnSignal().registerTurnSignalState(object : ai.pleos.playground.vehicle.listener.TurnSignalStateListener {
@@ -1256,7 +1239,6 @@ class CarService : Service() {
             gear != VehicleGear.GEAR_DRIVE -> "주행 중이 아님"
             !leftLot -> "주차장을 벗어나는 중 (${speedKph.toInt()}km/h)"
             roadReason() != null -> roadReason()
-            lastPlayAt != 0L && now - lastPlayAt < GAP_MS -> "메시지 간격 유지 (${(GAP_MS - (now - lastPlayAt)) / 1000}초)"
             else -> null
         }
     }
@@ -1476,10 +1458,8 @@ class CarService : Service() {
 
     private fun wheel() = wheel ?: WheelWindow(this).also { wheel = it }
 
-    /** 프라이빗 모드가 켜져 있고 동승자가 있으면(조수석·뒷좌석 착석) 누가 보냈는지 말하지 않는다. */
-    private fun withPassenger() = seated.values.any { it }
-    /** 이름을 숨길 때: 프라이빗 모드가 켜져 있고 동승자가 있을 때. 안내·알림 모두 이 판단 하나만 쓴다. */
-    fun hideName() = Hub.privateMode(this@CarService) && withPassenger()
+    /** 이름을 숨길 때. 동승자 이름 숨기기(프라이빗 모드)는 11/10에 뺐다: 운전에 맞춘 건 주행 집중 모드 하나로 둔다. */
+    fun hideName() = false
     fun whose(h: Hidden) = if (hideName()) "음성 메시지" else "${nim(h.sender)} 메시지"
 
     /** 띵동을 울리고 끝나면 다음으로. */

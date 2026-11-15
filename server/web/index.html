@@ -1876,7 +1876,7 @@ $("#profOk").addEventListener("click", async () => {
     body.device = st.claimKey;
   }
   if (profPhoto) body.photo = profPhoto;
-  if (ch && charMode === "new") { body.avatar = ch.avatar; body.color = ch.color; }
+  if (ch && charMode === "new") { body.avatar = ch.avatar; body.color = ch.color; body.bust = await faceShot(ch.avatar, ch.color); }
   // 사진은 서버가 확인하느라 몇 초 걸린다: 멈춘 것처럼 보이지 않게 막대를 띄운다
   checking("#profChk", !!profPhoto);
   try { if (await profile(body)) { busy = false; checking("#profChk", false); say("#profOk", "내 자리 만들기"); $("#profOk").disabled = false; return joined(); } }
@@ -1950,6 +1950,15 @@ let CAT = null, catP = null, modP = null, view = null, ch = null, charMode = "ne
 const catalog = () => catP || (catP = fetch("/api/presets", { signal: wait(30000) }).then(r => r.ok ? r.json() : Promise.reject())
   .then(j => (CAT = j)).catch(() => { catP = null; return null; }));
 const avatarMod = () => modP || (modP = import("/avatar3d.js").then(async m => { await m.load(); return m; }).catch(() => { modP = null; return null; }));
+// 차 얼굴 칸에 쓸 그림: 웹 아이콘과 같은 3D 그림(snap 256px PNG)을 캐릭터와 같이 보낸다. 못 그리면 안 보낸다(차는 예전 그림)
+async function faceShot(a, color) {
+  try {
+    const [m, cat] = await Promise.all([avatarMod(), catalog()]);
+    if (!m || !cat || !cat.colors[color]) return undefined;
+    const u = m.snap(a, cat.colors[color].hex, cat, 256);
+    return /^data:image\/png;base64,/.test(u) ? u.slice(u.indexOf(",") + 1) : undefined;
+  } catch (e) { return undefined; }
+}
 // 70번 개편: 탭 안에서는 한 번에 한 부분만(부분 칩). 칩 순서는 56번 1분 흐름(눈 → 눈썹 → 입 → 안경·수염), 코·얼굴형·주름·볼터치는 뒤쪽.
 // 색은 그 부분 바로 위 동그라미 줄: 머리 모양 위에 머리·눈썹 색, 수염 위에 수염 색(수염이 있을 때만). 피부색은 동그라미 줄만
 const TABS = {
@@ -2268,7 +2277,7 @@ $("#charOk").addEventListener("click", async () => {
   if (charMode !== "edit") { profAsChar(); show("s-prof"); $("#profName").focus(); return; }
   if (busy) return;
   busy = true; $("#charOk").disabled = true; tell("#charErr", "");
-  try { if (await profile({ avatar: ch.avatar, color: ch.color })) { busy = false; $("#charOk").disabled = false; goBackTo("s-me", () => toast("캐릭터를 바꿨어요")); return; } }   // [확인 필요] 새 문구
+  try { if (await profile({ avatar: ch.avatar, color: ch.color, bust: await faceShot(ch.avatar, ch.color) })) { busy = false; $("#charOk").disabled = false; goBackTo("s-me", () => toast("캐릭터를 바꿨어요")); return; } }   // [확인 필요] 새 문구
   catch (e) {
     tell("#charErr", ko(e) || "저장하지 못했어요. 다시 눌러 주세요.");
     if (/색/.test(e.message || "") && !st.used.includes(ch.color)) { st.used = st.used.concat(ch.color); drawParts(); }
@@ -2334,7 +2343,7 @@ async function saveKid() {
   if (busy || !n) return;
   busy = true; $(btn).disabled = true; tell(errAt, "");
   const body = { invite: st.invite, name: n, consent: true };
-  if (ch) { body.avatar = ch.avatar; body.color = ch.color; }
+  if (ch) { body.avatar = ch.avatar; body.color = ch.color; body.bust = await faceShot(ch.avatar, ch.color); }
   try {
     const { res, j } = await post("/api/together", body, 20000);
     if (res.status === 410) { busy = false; return gone(); }
@@ -2386,7 +2395,7 @@ async function saveKidChar() {
   if (busy || !kidEdit || !ch) return;
   busy = true; $("#charOk").disabled = true; tell("#charErr", "");
   try {
-    const { res, j } = await post("/api/profile", { invite: kidEdit.code, avatar: ch.avatar, color: ch.color }, 20000);
+    const { res, j } = await post("/api/profile", { invite: kidEdit.code, avatar: ch.avatar, color: ch.color, bust: await faceShot(ch.avatar, ch.color) }, 20000);
     if (res.status === 410) { busy = false; return gone(); }
     if (!res.ok) throw new Error(srv(res, j, ""));
     st.used = st.used.filter(c => c !== kidEdit.color).concat(Number.isInteger(j.color) ? [j.color] : []);   // 내 쪽에서 본 쓰인 색도 맞춘다

@@ -15,6 +15,10 @@
     <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
     <uses-permission android:name="pleos.car.permission.READ_CAR_STEERING" />
     <uses-permission android:name="android.car.permission.READ_WINDSHIELD_WIPERS" />
+    <!-- Pleos 문서 표기(pleos.car.)도 함께 선언. 속도·기어는 AAOS API라 android.car. 표기도 그대로 둔다 -->
+    <uses-permission android:name="pleos.car.permission.CAR_POWERTRAIN" />
+    <uses-permission android:name="pleos.car.permission.CAR_SPEED" />
+    <uses-permission android:name="pleos.car.permission.READ_WINDSHIELD_WIPERS" />
     <uses-permission android:name="pleos.car.permission.CAR_WINDOWS" />
     <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />

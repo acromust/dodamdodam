@@ -1,4 +1,4 @@
-"""심어둠 프로토타입 서버.
+"""도담도담 프로토타입 서버.
 
 숨기는 사람은 웹 링크(/)로 목소리를 숨기고, 차 앱은 /api 로 오늘 메시지를 받아 간다.
 표준 라이브러리만 쓴다. 실행: python3 server.py [포트]  (기본 8090)
@@ -199,10 +199,10 @@ EXAMPLES = ("start", "arrive", "home", "rain", "long", "battery")
 EX_VOICES = (
     ("ex_start", "start", "30대 아내", "남편", "여보, 오늘 발표 날이죠? 잘하고 와요!"),
     ("ex_arrive", "arrive", "8살 딸", "아빠", "아빠, 오늘도 운전하느라 수고했어요!"),
-    ("ex_home", "home", "30대 아내", "남편", "여보, 애들 방금 잠들었어요. 문 살살 열어요."),
+    ("ex_home", "home", "30대 아내", "남편", "여보, 애들 자니까 조용히 들어와요."),
     ("ex_rain", "rain", "딸", "아빠", "아빠, 비 오니까 천천히 와요. 우산은 뒷자리 아래!"),
     ("ex_long", "long", "70대 엄마", "40대 아들", "아들, 명절이라 길 막히지? 쉬엄쉬엄 와~"),
-    ("ex_battery", "battery", "아내", "남편", "여보, 충전할 때 글로브박스 포인트카드 적립해요."),
+    ("ex_battery", "battery", "아내", "남편", "여보, 주유할 때 글로브박스에 있는 카드로 적립해요."),
 )
 # 예전 순간별 6개(demo_*, 차 앱 res/raw 사본). 새 파일(ex_<순간>.m4a)이 아직 없는 순간에만 목록에 넣는다(주소는 늘 열린다)
 EX_DEMO = (("start", "아내", "남편", "오늘 3시 치과 예약 있는 거 잊지 마요."),
@@ -346,6 +346,37 @@ def store_photo(b64):
     store.upload(os.path.join(PHOTO, name), "photo/" + name, "image/jpeg")
     print("사진 검수:", "통과" if ok is True else "보류", flush=True)
     return name, ok
+
+
+MAX_BUST = 120 * 1024  # 캐릭터 얼굴 그림(웹 avatar3d snap 256px PNG). 보통 30~60KB
+
+
+def store_bust(b64):
+    """캐릭터를 저장할 때 웹이 같이 보내는 얼굴 그림(웹 프로필 아이콘과 같은 3D 그림). 차의 얼굴 칸이 이 그림을 쓴다.
+    PNG·WEBP만, 크기 제한. 파일 이름을 돌려준다. 잘못된 값이면 None(캐릭터 저장은 그대로 한다: 차는 예전 그림으로)."""
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, TypeError):
+        return None
+    if len(raw) > MAX_BUST:
+        return None
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        ext, mime = "png", "image/png"
+    elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        ext, mime = "webp", "image/webp"
+    else:
+        return None
+    name = f"bust{uuid.uuid4().hex}.{ext}"
+    with open(os.path.join(PHOTO, name), "wb") as f:
+        f.write(raw)
+    store.upload(os.path.join(PHOTO, name), "photo/" + name, mime)
+    return name
+
+
+def bust_v(inv):
+    """차가 받아 두는 얼굴 그림의 판 번호(그림을 바꿀 때마다 파일 이름이 바뀐다). 없으면 None(차는 예전 그림)."""
+    b = (inv or {}).get("bust")
+    return b[4:16] if b else None
 
 # 순간: 주행 중 열리므로 5초 이내
 MOMENTS = {
@@ -566,7 +597,7 @@ def fill_people(db):
 
 def unseat(inv):
     """끊김·탈퇴·옮김: 자리와 색을 비운다(다른 사람은 그 자리에 그대로). 캐릭터도 지운다."""
-    for k in ("slot", "color", "avatar"):
+    for k in ("slot", "color", "avatar", "bust"):
         inv.pop(k, None)
 
 
@@ -1661,7 +1692,7 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 db = load()
             return self.send_json({"invites": [{"code": i["code"], "name": i.get("name"), "created": i["created"],
-                                                "claimed": bool(i.get("device_hash")), "photo": photo_v(i),
+                                                "claimed": bool(i.get("device_hash")), "photo": photo_v(i), "bust": bust_v(i),
                                                 # 다시 연결로 만든 새 링크를 새 폰이 아직 열지 않음(차 사람 화면 '새 링크 보냄')
                                                 "reissued": bool(i.get("reissued")) and not i.get("device_hash"),
                                                 # 아무 폰도 열지 않은 채 하루가 지나 못 쓰는 코드(차는 '만료'로 보이거나 다시 연결하면 된다). 옛 차 앱은 이 값을 안 읽는다
@@ -1728,6 +1759,18 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(p):
                 return self.send_json({"error": "not found"}, 404)   # 화면에 뜨지 않게 한글을 뺐다(웹은 한글 오류만 보여 준다)
             return self.send_file(p, "image/jpeg", cache="private, max-age=86400")
+        if u.path == "/api/car/bust":
+            # 차 앱: 이 차가 만든 초대 링크의 캐릭터 얼굴 그림만(밖에서는 차 열쇠가 있어야 열린다: blocked). v가 지금 그림과 다르면 404
+            code, v = q.get("invite", [""])[0], q.get("v", [""])[0]
+            with lock:
+                db = load()
+            inv = find_invite(db, code)
+            if not inv or inv.get("revoked") or not of_car(inv, self.car()) or not bust_v(inv) or (v and v != bust_v(inv)):
+                return self.send_json({"error": "not found"}, 404)
+            p = photo_file(inv["bust"])
+            if not os.path.exists(p):
+                return self.send_json({"error": "not found"}, 404)
+            return self.send_file(p, "image/webp" if p.endswith(".webp") else "image/png", cache="private, max-age=86400")
         if u.path == "/api/car/photo":
             # 차 앱: 이 차가 만든 초대 링크의 사진만(밖에서는 차 열쇠가 있어야 이 주소가 열린다: blocked). v가 지금 사진과 다르면 404(다음에 새 판으로 다시 받는다)
             code, v = q.get("invite", [""])[0], q.get("v", [""])[0]
@@ -2066,7 +2109,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not free(find_invite(db0, code)):
                         self.own_invite(db0, code, dev, extra=(ckey,))  # 사진을 저장하기 전에 먼저 확인
                 photo, photo_ok = store_photo(body["photo"]) if body.get("photo") else (None, None)
-                old, token = None, None
+                bust = store_bust(body["bust"]) if av is not None and isinstance(body.get("bust"), str) else None
+                old, token, old_bust = None, None, None
                 with lock:
                     db = load()
                     try:
@@ -2080,6 +2124,8 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         if photo:
                             remove_photo(photo)
+                        if bust:
+                            remove_photo(bust)
                         raise
                     if new_name:
                         inv["name"] = new_name
@@ -2098,11 +2144,16 @@ class Handler(BaseHTTPRequestHandler):
                     if seated(inv):   # 자리가 없는 사람(예전 기록 6번째)은 광장에 안 나오므로 캐릭터를 두지 않는다
                         if av is not None:
                             inv["avatar"] = avatar.clean(av, inv.get("avatar"))
+                            # 캐릭터가 바뀌면 예전 얼굴 그림은 버린다(새 그림이 없으면 차는 예전 방식 그림)
+                            old_bust = inv.pop("bust", None)
+                            if bust:
+                                inv["bust"], bust = bust, None
                         if col is not None:
                             inv["color"] = col
                     save(db)
-                if old:
-                    remove_photo(old)
+                for f in (old, old_bust, bust):   # bust가 남았으면 자리가 없어 못 쓴 그림
+                    if f:
+                        remove_photo(f)
                 res = {"ok": True, "name": inv.get("name"), "photo": inv.get("photo"),
                        "avatar": inv.get("avatar"), "color": inv.get("color"), "used_colors": used_colors(db, inv.get("car"), inv)}
                 if claim and (token or (self.key_out and self.key_out[1] == ckey)):
@@ -2136,29 +2187,36 @@ class Handler(BaseHTTPRequestHandler):
                 if av is not None:
                     av = avatar.clean(av)
                 col = avatar.clean_color(body["color"]) if body.get("color") is not None else None
-                with lock:
-                    db = load()
-                    g = self.own_invite(db, code, dev)
-                    if g.get("guardian") or not g.get("name") or not seated(g):
-                        raise ValueError(KID_BAD)   # 함께 쓰는 사람이 또 추가하거나, 프로필을 안 만든 사람
-                    if free_slot(db, g.get("car")) is None:
-                        raise ValueError(FULL)
-                    if col is not None and col in used_colors(db, g.get("car")):
-                        raise ValueError(COLOR_TAKEN)
-                    now = int(time.time())
-                    kid = {"code": kid_code(db), "created": now, "claimed": now, "car": g.get("car"), "from": g.get("from"),
-                           "name": name, "guardian": g["code"], "consent": now, "consent_v": KID_CONSENT_V, "consent_items": KID_CONSENT_ITEMS}
-                    if g.get("device_hash"):
-                        kid["device_hash"] = g["device_hash"]
-                    if col is not None:
-                        kid["color"] = col
-                    if av is not None:
-                        kid["avatar"] = av
-                    seat(db, kid)
-                    db["invites"].append(kid)
-                    save(db)
-                    out = {"ok": True, **kid_view(kid), "together": [kid_view(k) for k in kids_of(db, g)],
-                           "used_colors": used_colors(db, g.get("car"), g)}
+                kbust = store_bust(body["bust"]) if av is not None and isinstance(body.get("bust"), str) else None
+                try:
+                    with lock:
+                        db = load()
+                        g = self.own_invite(db, code, dev)
+                        if g.get("guardian") or not g.get("name") or not seated(g):
+                            raise ValueError(KID_BAD)   # 함께 쓰는 사람이 또 추가하거나, 프로필을 안 만든 사람
+                        if free_slot(db, g.get("car")) is None:
+                            raise ValueError(FULL)
+                        if col is not None and col in used_colors(db, g.get("car")):
+                            raise ValueError(COLOR_TAKEN)
+                        now = int(time.time())
+                        kid = {"code": kid_code(db), "created": now, "claimed": now, "car": g.get("car"), "from": g.get("from"),
+                               "name": name, "guardian": g["code"], "consent": now, "consent_v": KID_CONSENT_V, "consent_items": KID_CONSENT_ITEMS}
+                        if g.get("device_hash"):
+                            kid["device_hash"] = g["device_hash"]
+                        if col is not None:
+                            kid["color"] = col
+                        if av is not None:
+                            kid["avatar"] = av
+                            if kbust:
+                                kid["bust"], kbust = kbust, None
+                        seat(db, kid)
+                        db["invites"].append(kid)
+                        save(db)
+                        out = {"ok": True, **kid_view(kid), "together": [kid_view(k) for k in kids_of(db, g)],
+                               "used_colors": used_colors(db, g.get("car"), g)}
+                finally:
+                    if kbust:   # 자리가 없거나 막혀 못 쓴 그림
+                        remove_photo(kbust)
                 print("[함께 쓰는 사람] 추가", flush=True)
                 return self.send_json(out)
             if u.path == "/api/leave":

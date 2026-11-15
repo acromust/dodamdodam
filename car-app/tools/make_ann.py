@@ -17,8 +17,10 @@ RAW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../app/src/main/
 
 # 차 안내 목소리: 가족 예시 목소리(Leda·Sulafat 등)와 겹치지 않는 맑은 여성 목소리 하나로 통일
 VOICE = "Erinome"
-STYLE = ("a calm, polite Korean in-car system announcer (like a Korean car navigation voice), "
-         "clear standard Seoul pronunciation, slightly slower than conversation, even and warm, no exaggerated emotion")
+# 11/11 사용자 '템포가 느림': 녹음 뒤 속도를 바꾸지 않고 지시문으로 또렷하고 경쾌한 안내 방송 속도를 요청한다
+STYLE = ("a clear, polite Korean in-car system announcer (like a Korean car navigation voice), "
+         "clear standard Seoul pronunciation, crisp and light, brisk announcement pace like a modern car's notification voice "
+         "(do not drag or stretch syllables, no long pauses), warm but no exaggerated emotion")
 
 # (파일 이름, 문장, 최대 길이 초) — 앱 Ann.kt와 같은 문장이어야 한다
 JOBS = [

@@ -311,7 +311,7 @@ class MainActivity : Activity() {
         io.execute {
             val r = runCatching { Api.invites() }
             // 사람 화면·메시지 화면의 사진을 받아 두고, 목록에 없는 사진(지움·바꿈·끊음)은 차에서도 지운다
-            r.getOrNull()?.let { list -> list.forEach { runCatching { Store.fetchPhoto(this, it.code, it.photo) } }; runCatching { Store.keepPhotos(this, list) } }
+            r.getOrNull()?.let { list -> list.forEach { runCatching { Store.fetchPhoto(this, it.code, it.photo) } }; runCatching { Store.keepPhotos(this, list) }; runCatching { Store.syncBusts(this, list) } }
             main.post { Hub.invites = r.getOrNull(); invitesChecked = true; invitesLoading = false; if (r.isSuccess) Plaza.load(this, force = true); render() }
         }
     }
@@ -487,15 +487,14 @@ class MainActivity : Activity() {
 
     // ---------- 화면 고르기 ----------
 
-    /** 한 칸 폭(가로로 넓은 창이면 최대 840dp를 왼쪽에 붙여 왼쪽 여백 48, 세로 창이면 꽉 차게. 63번 4장). */
+    /** 한 칸 폭(가로로 넓은 창이면 최대 840dp 기둥을 창 가운데에, 세로·1:1 창이면 꽉 차게. 11/15: 왼쪽에 붙이면 오른쪽 절반이 비어 미완성처럼 보여 가운데로. 칸 안 목록은 왼쪽 정렬 그대로). */
     /** span: 가로 창에서도 840 기둥으로 줄이지 않고 창 폭 전체(광장 화면: 왼쪽 광장 + 오른쪽 정보 기둥, C1). */
     private fun column(fill: Boolean = false, span: Boolean = false): LinearLayout {
         val w = resources.configuration.screenWidthDp
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val holder = LinearLayout(this).apply { gravity = Gravity.START }
+        val holder = LinearLayout(this).apply { gravity = Gravity.CENTER_HORIZONTAL }
         val narrowCol = w >= 1000 && !span
-        // 본문 칸 왼쪽 여백 32 + 16 = 48
-        holder.addView(col, LinearLayout.LayoutParams(if (narrowCol) 840.dp else -1, if (fill) -1 else -2).apply { if (narrowCol) marginStart = 16.dp })
+        holder.addView(col, LinearLayout.LayoutParams(if (narrowCol) 840.dp else -1, if (fill) -1 else -2))
         // fill: 창 높이를 꽉 채워 주인공(눈금)을 세로 가운데에, 입구 줄을 맨 아래에 둔다
         body.addView(holder, if (fill) LinearLayout.LayoutParams(-1, 0, 1f) else full())
         return col
@@ -1268,6 +1267,13 @@ class MainActivity : Activity() {
     }
 
     private fun bustOf(p: PlazaPerson): Bitmap = busts.getOrPut(p) { Plaza.bust(p, 256) }
+    /** 웹이 올린 3D 얼굴 그림(받아 둔 것). 없으면 null. */
+    private fun shotOf(p: PlazaPerson): Bitmap? {
+        val v = Hub.invites?.firstOrNull { it.code == p.code }?.bust ?: return null
+        val f = Store.bustFile(this, v)
+        if (!f.exists()) return null
+        return bitmaps.getOrPut(f.path) { runCatching { BitmapFactory.decodeFile(f.path) }.getOrNull() }
+    }
 
     /** 패널 공통 틀(63번 4장): 흰 면(밤 #313236) 모서리 32, 그림자 8, 안쪽 여백 40. 꼬리(40×20)는 패널 위 가운데에서 원판을 가리킨다. */
     private fun panelShell(h: Int, tail: Boolean): Pair<FrameLayout, FrameLayout> {
@@ -1299,10 +1305,13 @@ class MainActivity : Activity() {
 
     /** 보낸 사람 얼굴 칸(광장의 대표색 + 어깨 위 그림). 모를 때·이름을 숨길 때는 회색 칸 + 사람 아이콘 64%. */
     private fun faceTile(p: PlazaPerson?, radius: Int = 24): View = FrameLayout(this).apply {
-        background = GradientDrawable().apply { setColor(p?.let { Plaza.color(it.color) } ?: C.LINE); cornerRadius = radius.dp.toFloat() }
+        // 웹이 캐릭터와 같이 올린 3D 얼굴 그림이 있으면 웹 아이콘과 같게: 대표색 18% 바탕 + 그 그림. 없으면 예전 그림(대표색 바탕)
+        val shot = p?.let { shotOf(it) }
+        val base = p?.let { Plaza.color(it.color) } ?: C.LINE
+        background = GradientDrawable().apply { setColor(if (shot != null) Color.argb(0x2E, Color.red(base), Color.green(base), Color.blue(base)) else base); cornerRadius = radius.dp.toFloat() }
         clipToOutline = true
         outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(view: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, view.width, view.height, radius.dp.toFloat()) } }
-        if (p != null) addView(ImageView(this@MainActivity).apply { setImageBitmap(bustOf(p)); scaleType = ImageView.ScaleType.CENTER_CROP }, FrameLayout.LayoutParams(-1, -1))
+        if (p != null) addView(ImageView(this@MainActivity).apply { setImageBitmap(shot ?: bustOf(p)); scaleType = ImageView.ScaleType.CENTER_CROP }, FrameLayout.LayoutParams(-1, -1))
         else addView(Icon(this@MainActivity, "person", C.SUB), FrameLayout.LayoutParams(-1, -1).apply { setMargins(radius.dp / 2 + 8.dp, radius.dp / 2 + 8.dp, radius.dp / 2 + 8.dp, radius.dp / 2 + 8.dp) })
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -2402,9 +2411,6 @@ class MainActivity : Activity() {
         val list = listBox(v)
         listAdd(list, navRow("들은 메시지") { heardOpen = true; render() })
         listAdd(list, navRow("듣는 방식", MODE_NAME[Hub.listenMode(this)]) { modeOpen = true; render() })
-        listAdd(list, switchRow("프라이빗 모드", "동승자가 있으면 이름과 사진을 숨깁니다", Hub.privateMode(this)) { on ->
-            Hub.setPrivateMode(this, on); Hub.log("프라이빗 모드 → ${if (on) "켜기" else "끄기"}"); render()
-        })
         listAdd(list, navRow("사람·초대") { familyOpen = true; render() })
         // 광장 자리 순서(차 주인만 = 이 차 화면, P에서만: 설정은 정차 중에만 열린다)
         if (Hub.plaza?.people?.isNotEmpty() == true) listAdd(list, navRow("자리 바꾸기") { orderOpen = true; orderDraft = null; render() })

@@ -18,6 +18,25 @@ object Store {
     private fun photoDir(c: Context) = File(c.filesDir, "photos").apply { mkdirs() }
     fun photoFile(c: Context, v: String) = File(photoDir(c), "${v.filter { it.isLetterOrDigit() }}.jpg")
 
+    /** 캐릭터 얼굴 그림(판 번호마다 한 장). 캐릭터를 바꾸면 판 번호가 바뀌어 새로 받는다. */
+    private fun bustDir(c: Context) = File(c.filesDir, "busts").apply { mkdirs() }
+    fun bustFile(c: Context, v: String) = File(bustDir(c), "${v.filter { it.isLetterOrDigit() }}.img")
+    /** 얼굴 그림을 받아 두고, 목록에 없는 그림(바꿈·끊음)은 지운다. 백그라운드 스레드에서 부른다. */
+    fun syncBusts(c: Context, invites: List<Invite>) {
+        invites.forEach { i ->
+            val v = i.bust ?: return@forEach
+            val f = bustFile(c, v)
+            if (f.exists()) return@forEach
+            runCatching {
+                val part = File(f.path + ".part")
+                part.writeBytes(Api.bust(i.code, v))
+                part.renameTo(f) || run { part.delete(); false }
+            }.onFailure { File(f.path + ".part").delete() }
+        }
+        val keep = invites.mapNotNull { it.bust?.let { v -> bustFile(c, v).name } }.toSet()
+        bustDir(c).listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
+    }
+
     /** 사진을 받아 둔다(이미 있으면 그대로). 백그라운드 스레드에서 부른다. 받았으면 true. */
     fun fetchPhoto(c: Context, invite: String?, v: String?): Boolean {
         if (invite == null || v == null) return false

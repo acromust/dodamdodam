@@ -46,7 +46,7 @@ fun placeOf(o: JSONObject?) = o?.let { Place(it.getDouble("lat"), it.getDouble("
 /** 운전자가 보낸 초대 링크. name은 링크를 연 사람이 처음 숨길 때 정해진다(그전엔 null).
  *  claimed: 어떤 폰이 이 링크를 처음 열어 가졌는지(그 폰만 쓸 수 있다). photo: 사진 판 번호.
  *  reissued: 다시 연결로 만든 새 링크를 새 폰이 열기 전. */
-data class Invite(val code: String, val name: String?, val claimed: Boolean = false, val photo: String? = null, val reissued: Boolean = false)
+data class Invite(val code: String, val name: String?, val claimed: Boolean = false, val photo: String? = null, val reissued: Boolean = false, val bust: String? = null)
 
 /** JSON 값이 비었거나 null이면 null(org.json의 optString은 null을 "null"로 준다). */
 fun JSONObject.str(k: String) = optString(k).takeIf { it.isNotEmpty() && it != "null" }
@@ -123,16 +123,18 @@ object Api {
 
     fun invites(): List<Invite> {
         val arr = JSONObject(get("/api/invites")).getJSONArray("invites")
-        return (0 until arr.length()).map { arr.getJSONObject(it) }.map { Invite(it.getString("code"), it.str("name"), it.optBoolean("claimed"), it.str("photo"), it.optBoolean("reissued")) }
+        return (0 until arr.length()).map { arr.getJSONObject(it) }.map { Invite(it.getString("code"), it.str("name"), it.optBoolean("claimed"), it.str("photo"), it.optBoolean("reissued"), it.str("bust")) }
     }
     /** 새 초대 링크 코드. from: 운전자 이름(예: 홍길동, '님' 없이). 웹 초대장에 '홍길동님 차'로 보인다. 없으면 null. */
     fun createInvite(from: String?): String = JSONObject(post("/api/invites", JSONObject().put("from", from ?: JSONObject.NULL))).getString("code")
     fun revokeInvite(code: String) = post("/api/invites/$code/revoke", JSONObject())
     /** 폰을 바꾼 사람에게 새 링크(같은 사람으로 이어진다: 이름·사진·메시지·답장). 예전 링크는 끊긴다. 새 코드를 돌려준다. */
     fun reissueInvite(code: String, from: String?): String = JSONObject(post("/api/invites/$code/reissue", JSONObject().put("from", from ?: JSONObject.NULL))).getString("code")
+    /** 캐릭터 얼굴 그림(웹 아이콘과 같은 3D 그림, PNG·WEBP). 이 차가 만든 초대 링크의 것만. 없으면 오류. */
+    fun bust(invite: String, v: String): ByteArray = photo(invite, v, "bust")
     /** 남긴 사람 사진(JPEG). 이 차가 만든 초대 링크의 것만 받는다. 없으면 오류. */
-    fun photo(invite: String, v: String): ByteArray {
-        val c = URL("$BASE/api/car/photo?invite=${java.net.URLEncoder.encode(invite, "UTF-8")}&v=${java.net.URLEncoder.encode(v, "UTF-8")}").openConnection() as HttpURLConnection
+    fun photo(invite: String, v: String, kind: String = "photo"): ByteArray {
+        val c = URL("$BASE/api/car/$kind?invite=${java.net.URLEncoder.encode(invite, "UTF-8")}&v=${java.net.URLEncoder.encode(v, "UTF-8")}").openConnection() as HttpURLConnection
         c.connectTimeout = 4000; c.readTimeout = 8000
         carKey(c)
         try {

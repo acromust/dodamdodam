@@ -212,9 +212,6 @@ object Hub {
     @Volatile var quiet = false
     fun enabled(c: Context) = prefs(c).getBoolean("enabled", false) && !quiet
     fun setEnabled(c: Context, on: Boolean) = prefs(c).edit().putBoolean("enabled", on).apply()
-    /** 프라이빗 모드: 운전자 말고 다른 사람이 타면 보낸 사람 이름을 말하지 않는다. 운전자가 설정에서 끄고 켠다(기본 켜짐). */
-    fun privateMode(c: Context) = prefs(c).getBoolean("private", true)
-    fun setPrivateMode(c: Context, on: Boolean) = prefs(c).edit().putBoolean("private", on).apply()
     /** 저사양 모드: 광장을 초당 30장으로, 꾸밈 효과 몇 가지를 끈다(기본 꺼짐 = 60장). */
     fun lowSpec(c: Context) = prefs(c).getBoolean("lowSpec", false)
     fun setLowSpec(c: Context, on: Boolean) = prefs(c).edit().putBoolean("lowSpec", on).apply()
