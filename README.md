@@ -136,7 +136,7 @@ python3 server.py 8090
 
 ## 테스트 환경 및 필요한 설정
 
-- Pleos Connect Emulator 2.1.0(Android 14, API 34)과 Pleos Connect Virtual Console을 사용한다. 기어·속도·와이퍼·배터리는 위 '에뮬레이터 조작'에 따라 바꾼다.
+- Pleos Connect Emulator 2.1.0(Android 14, API 34)과 Pleos Connect Virtual Console을 사용한다. 화면 규격은 2560×1440(160dpi, 가로)이며, Pleos Connect에서 내비게이션과 1:1로 나눈 화면과 도담도담 단독 화면 모두에서 확인하였다. 기어·속도·와이퍼·배터리는 위 '에뮬레이터 조작'에 따라 바꾼다.
 - 앱 설치는 `adb install -r -g`(권한을 미리 허용)로 한다. `-g` 없이 설치하면 첫 실행에서 속도·위치·알림 권한을 묻는다.
 - 서버: 클라우드(`https://dodamdodam.onrender.com`)로 빌드한 APK는 별도 설정이 필요하지 않다. 시연용 서버는 무료 요금제로 운영하므로 한동안 접속이 없으면 첫 응답이 늦을 수 있으며, 그동안 차량 앱은 예시 메시지로 동작한다.
 - 답장 녹음: 에뮬레이터 확장 설정의 마이크 항목에서 호스트 오디오 입력을 켠다.
